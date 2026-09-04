@@ -4,7 +4,7 @@ from datetime import datetime, timezone as datetime_timezone
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from lazymind.chat.engine.agent_runtime import AgentRole, PromptBuilder
+from lazymind.chat.engine.agent_runtime import AgentRole, PromptBuilder, PromptBundle
 from lazymind.common.memory.field_contract import memory_operation_rules
 
 from .guidance import (
@@ -132,7 +132,17 @@ def _resolve_response_language(
     return _locale_language(locale), f'default UI locale {locale}'
 
 
-def _build_response_language_prompt(
+def _build_session_language_prompt(environment_context: dict | None = None) -> str:
+    locale = _get_ui_locale(environment_context)
+    language = _locale_language(locale)
+    return (
+        f'{RESPONSE_LANGUAGE_GUIDANCE}\n'
+        f'Default UI locale for this conversation: {locale}.\n'
+        f'Session default response language: {language}.'
+    )
+
+
+def _build_turn_language_prompt(
     environment_context: dict | None = None,
     *,
     current_query: str | None = None,
@@ -144,14 +154,12 @@ def _build_response_language_prompt(
         environment_context=environment_context,
     )
     return (
-        f'{RESPONSE_LANGUAGE_GUIDANCE}\n'
-        f'Default UI locale for this request: {_get_ui_locale(environment_context)}.\n'
         f'Selected response language for this turn: {language} ({source}).\n'
         f'Use {language} for all user-visible natural-language text in this turn.'
     )
 
 
-def _format_user_time(time_now: object, timezone: object) -> str:
+def _format_user_date(time_now: object, timezone: object) -> str:
     raw_time = str(time_now).strip()
     if not raw_time:
         return ''
@@ -163,10 +171,13 @@ def _format_user_time(time_now: object, timezone: object) -> str:
         if parsed_time.tzinfo is None:
             parsed_time = parsed_time.replace(tzinfo=datetime_timezone.utc)
         if timezone_name:
-            user_time = parsed_time.astimezone(ZoneInfo(timezone_name))
-            return f'{user_time:%Y-%m-%d %H:%M:%S} ({timezone_name})'
-        return parsed_time.isoformat()
-    except (ValueError, TypeError, ZoneInfoNotFoundError):
+            try:
+                user_time = parsed_time.astimezone(ZoneInfo(timezone_name))
+                return f'{user_time:%Y-%m-%d} ({timezone_name})'
+            except ZoneInfoNotFoundError:
+                return f'{parsed_time:%Y-%m-%d}'
+        return f'{parsed_time:%Y-%m-%d}'
+    except (ValueError, TypeError):
         return raw_time
 
 
@@ -179,11 +190,11 @@ def _build_environment_context_prompt(environment_context: dict | None = None) -
             time_now = time_info.get('now')
             timezone = time_info.get('timezone')
 
-    user_time = _format_user_time(time_now, timezone) if time_now else ''
-    if not user_time:
+    user_date = _format_user_date(time_now, timezone) if time_now else ''
+    if not user_date:
         return ''
 
-    return f'## Environment Context\nCurrent user time: {user_time}'
+    return f'## Environment Context\nCurrent user date: {user_date}'
 
 
 _TOOL_APPENDIX_SECTION_TITLES = {
@@ -226,12 +237,16 @@ def add_standard_system_sections(
         'editable_writing', '', EDITABLE_WRITING_GUIDANCE,
         'platform.output.editable', priority=15, skip_if=not include_editable_writing,
     ).system(
-        'response_language', '', _build_response_language_prompt(
+        'response_language', '', _build_session_language_prompt(environment_context),
+        'platform.language', priority=20,
+    ).runtime(
+        'response_language_turn', 'Response Language',
+        _build_turn_language_prompt(
             environment_context,
             current_query=current_query,
             conversation_history=conversation_history,
         ),
-        'platform.language', priority=20,
+        'request.language', priority=1, authoritative=True, content_kind='instruction',
     )
 
     environment_prompt = _build_environment_context_prompt(environment_context)
@@ -423,7 +438,12 @@ def add_standard_system_sections(
     return builder
 
 
+def build_standard_prompt_bundle(has_tools: bool, **kwargs) -> PromptBundle:
+    """Render standard system and runtime sections for direct consumers and tests."""
+    builder = PromptBuilder.for_role(AgentRole.CHAT)
+    return add_standard_system_sections(builder, has_tools, **kwargs).build()
+
+
 def build_system_prompt(has_tools: bool, **kwargs) -> str:
     """Render standard system sections for direct consumers and focused tests."""
-    builder = PromptBuilder.for_role(AgentRole.CHAT)
-    return add_standard_system_sections(builder, has_tools, **kwargs).build().system_prompt
+    return build_standard_prompt_bundle(has_tools, **kwargs).system_prompt
