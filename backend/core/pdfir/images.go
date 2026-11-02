@@ -7,11 +7,12 @@ import (
 )
 
 type Image struct {
-	Captions      []string        `json:"captions"`
-	Footnotes     []string        `json:"footnotes"`
-	Number        string          `json:"number,omitempty"`
-	RelatedBlocks []TableRelation `json:"related_blocks"`
-	Warnings      []string        `json:"warnings,omitempty"`
+	AssetAvailable bool            `json:"asset_available"`
+	Captions       []string        `json:"captions"`
+	Footnotes      []string        `json:"footnotes"`
+	Number         string          `json:"number,omitempty"`
+	RelatedBlocks  []TableRelation `json:"related_blocks"`
+	Warnings       []string        `json:"warnings,omitempty"`
 }
 
 var figureLabel = regexp.MustCompile(`(?i)(?:\bfigure\s+|\bfig\.\s*|图\s*)([A-Z]?\d+(?:\.\d+)*[a-z]?)\b`)

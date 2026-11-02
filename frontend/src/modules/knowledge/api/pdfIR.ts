@@ -12,7 +12,7 @@ export interface PdfIRTable {
   related_blocks: Array<{block_id: string; relation: 'caption' | 'mention'}>;
   warnings?: string[];
 }
-export interface PdfIRImage {captions:string[];footnotes:string[];number?:string;related_blocks:Array<{block_id:string;relation:"caption"|"mention"}>;warnings?:string[]}
+export interface PdfIRImage {asset_available?:boolean;captions:string[];footnotes:string[];number?:string;related_blocks:Array<{block_id:string;relation:"caption"|"mention"}>;warnings?:string[]}
 export interface PdfIRBlock { id: string; type: string; page: number; bbox?: [number, number, number, number]; latex?: string; text?: string; table?: PdfIRTable; image?: PdfIRImage }
 export interface PdfIRDocument {
   version: 1; projection_version?: number; source_sha256: string;

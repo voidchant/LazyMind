@@ -11,7 +11,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-const ProjectionVersion = 3
+const ProjectionVersion = 4
 const maxTableHTML = 2 << 20
 
 type TableCell struct {
@@ -36,6 +36,7 @@ type Table struct {
 	Warnings      []string        `json:"warnings,omitempty"`
 }
 type contentItem struct {
+	ImagePath      string    `json:"img_path"`
 	ImageCaptions  []string  `json:"image_caption"`
 	ImageFootnotes []string  `json:"image_footnote"`
 	Type           string    `json:"type"`

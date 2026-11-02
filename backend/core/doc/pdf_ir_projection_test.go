@@ -116,7 +116,7 @@ func TestPDFIRProjectionV2UpgradeKeepsExistingTableCaptionIDs(t *testing.T) {
 	os.WriteFile(ip, mustJSON(d), 0600)
 	os.WriteFile(rp, buf.Bytes(), 0600)
 	upgradePDFIRProjection(&d, pdfIRResult{IRPath: ip, RawPath: rp})
-	if d.ProjectionVersion != 3 || len(d.Blocks) != len(old)+1 || d.Blocks[1].Image.Number != "1" {
+	if d.ProjectionVersion != pdfir.ProjectionVersion || len(d.Blocks) != len(old)+1 || d.Blocks[1].Image.Number != "1" {
 		t.Fatal("v2 image upgrade failed")
 	}
 	for i, b := range old {

@@ -86,6 +86,7 @@ func AdaptZIP(raw []byte, hash, model string) (Document, error) {
 		return d, e
 	}
 	var content, layout []byte
+	var contentDirectory string
 	layoutCount := 0
 	for _, f := range z.File {
 		if path.IsAbs(f.Name) || strings.Contains(f.Name, "\\") || strings.Contains("/"+f.Name, "/../") {
@@ -107,6 +108,7 @@ func AdaptZIP(raw []byte, hash, model string) (Document, error) {
 			}
 		}
 		if strings.HasSuffix(f.Name, "_content_list.json") {
+			contentDirectory = path.Dir(f.Name)
 			if content != nil {
 				return d, errors.New("ambiguous content lists")
 			}
@@ -169,5 +171,6 @@ func AdaptZIP(raw []byte, hash, model string) (Document, error) {
 	sort.Slice(d.Pages, func(i, j int) bool { return d.Pages[i].Index < d.Pages[j].Index })
 	projectTables(&d, items, layout)
 	projectImages(&d, items, layout)
+	projectImageAssets(&d, items, z, contentDirectory)
 	return d, nil
 }
