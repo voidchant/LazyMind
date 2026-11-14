@@ -45,8 +45,13 @@ specific findings supplied for a targeted correction without revising unrelated 
 """
 
 SECTION = """
-Write only the requested role, using its frozen title. Use the prior summary for continuity and
-deduplication only. Define essential terms on first use and show how the authors' choices answer
+Write only the requested role, using its frozen title. Each section should read as part of one
+continuous long-read. Use the prior summary for continuity and deduplication only, without a
+fresh introduction in each section. Keep background and question concise; give contribution and
+justification enough space to explain the essential method, argument, or research design and
+walk through its strongest evidence. A standard Chinese guide often totals about 1,500 to 3,500
+characters across all four roles; let the argument and available evidence determine the length.
+Define essential terms on first use and show how the authors' choices answer
 the research question. For key evidence explain observation, premises, inference and limits. Choose
 teaching examples suited to the argument (worked example, counterexample, comparison, material
 analysis); mark them as teaching and label external background or interpretation clearly. Do not
