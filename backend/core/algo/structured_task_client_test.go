@@ -116,3 +116,34 @@ func TestStructuredTaskKeepsProviderAndUnknownFailureMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestPaperGuideStructuredTaskTransportPreservesBoundEvidence(t *testing.T) {
+	endpoint := startGenerateTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			TaskType string `json:"task_type"`
+			Input    struct {
+				Data struct {
+					Evidence []struct {
+						ID string `json:"id"`
+					} `json:"evidence"`
+				} `json:"data"`
+			} `json:"input"`
+			Options map[string]string `json:"options"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode structured task: %v", err)
+		}
+		if request.TaskType != "paper.guide.review" || request.Options["task_version"] != "paper-guide-v1" ||
+			len(request.Input.Data.Evidence) != 1 || request.Input.Data.Evidence[0].ID != "ev_fixture" {
+			t.Errorf("lost guide request metadata: %+v", request)
+		}
+		fmt.Fprint(w, `{"status":"succeeded","output":{"findings":[]},"usage":{"model_calls":1,"task_type":"paper.guide.review","task_version":"paper-guide-v1"}}`)
+	}))
+	t.Setenv("LAZYMIND_CHAT_SERVICE_URL", endpoint)
+	result, err := RunStructuredTask(context.Background(), StructuredTaskRequest{
+		Task: PaperGuideReviewTask, Version: PaperGuideTaskVersion, Input: map[string]any{"evidence": []map[string]string{{"id": "ev_fixture"}}},
+	})
+	if err != nil || string(result.Output) != `{"findings":[]}` {
+		t.Fatalf("response %s: %v", result.Output, err)
+	}
+}

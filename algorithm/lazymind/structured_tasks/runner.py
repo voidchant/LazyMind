@@ -89,7 +89,10 @@ def run_registered_task(request, task_id, *, call_model, configure_model, call_e
             elif raw.startswith('```\n') and raw.endswith('```'):
                 raw = raw[4:-3].strip()
             parsed = json.loads(raw)
-            output = spec.output_schema.model_validate(parsed).model_dump(exclude_unset=True)
+            validated = spec.output_schema.model_validate(parsed)
+            if spec.validate_output is not None:
+                spec.validate_output(data, validated)
+            output = validated.model_dump(exclude_unset=True)
         except (ValueError, TypeError, RecursionError):
             raise TaskFailure('invalid_model_output') from None
         return result(output=output)
