@@ -15,6 +15,15 @@ class TaskFailure(Exception):
         self.code = code
 
 
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate JSON key')
+        result[key] = value
+    return result
+
+
 def run_registered_task(request, task_id, *, call_model, configure_model, call_error, result_type):
     started = time.monotonic()
     usage = {'task_type': request.task_type, 'model_calls': 0}
@@ -88,7 +97,7 @@ def run_registered_task(request, task_id, *, call_model, configure_model, call_e
                 raw = raw[8:-3].strip()
             elif raw.startswith('```\n') and raw.endswith('```'):
                 raw = raw[4:-3].strip()
-            parsed = json.loads(raw)
+            parsed = json.loads(raw, object_pairs_hook=_unique_object if spec.reject_duplicate_keys else None)
             validated = spec.output_schema.model_validate(parsed)
             if spec.validate_output is not None:
                 spec.validate_output(data, validated)

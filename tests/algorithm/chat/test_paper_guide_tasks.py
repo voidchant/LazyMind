@@ -105,3 +105,95 @@ def test_guide_rejects_tools_and_paths_before_model(monkeypatch):
     request.input.data.pop('output_path')
     request.tools = ['shell']
     assert llm_task.run_llm_task(request).error_code == 'invalid_task_input'
+
+
+@pytest.mark.parametrize('raw', [
+    '{"claims":[],"claims":[],"open_questions":[]}',
+    '{"claims":[{"id":"a","id":"b","statement":"Some response.","attribution":"teaching",'
+    '"evidence_ids":[],"argument_type":null,"conditions":[],"support_status":"not_applicable"}],"open_questions":[]}',
+])
+def test_guide_rejects_duplicate_json_keys_with_one_call(monkeypatch, raw):
+    calls = []
+
+    def model(*args, **kwargs):
+        calls.append(1)
+        return raw
+
+    monkeypatch.setattr(llm_task, 'AutoModel', lambda **kwargs: model)
+    request = llm_task.LLMTaskRequest(
+        task_type='paper.guide.extract', options={'task_version': 'paper-guide-v1'},
+        input={'data': {'language': 'en', 'evidence': [EVIDENCE]}})
+    result = llm_task.run_llm_task(request)
+    assert result.error_code == 'invalid_model_output'
+    assert len(calls) == result.usage['model_calls'] == 1
+
+
+def test_section_requires_planned_claims_and_evidence_closure(monkeypatch):
+    from copy import deepcopy
+
+    other_id = 'ev_' + 'b' * 64
+    other = {**EVIDENCE, 'id': other_id, 'source_block_id': 'other'}
+    plan = deepcopy(PLAN)
+    claim = {'id': 'required', 'statement': 'Each sample was weighed.', 'attribution': 'paper_statement',
+             'evidence_ids': [SOURCE_ID], 'argument_type': None, 'conditions': [], 'support_status': 'supported'}
+    plan['claims'] = [claim, {**claim, 'id': 'other', 'evidence_ids': [other_id]}]
+    for ix, identifier in enumerate(('required', 'other')):
+        plan['sections'][ix]['claim_ids'] = [identifier]
+    section = deepcopy(SECTION)
+    section['claim_ids'] = ['required']
+    section['blocks'][0].update(claim_ids=['required'], evidence_ids=[])
+    monkeypatch.setattr(llm_task, 'AutoModel', lambda **kwargs: lambda *a, **k: json.dumps(section))
+    request = llm_task.LLMTaskRequest(
+        task_type='paper.guide.section', options={'task_version': 'paper-guide-v1'},
+        input={'data': {'plan': plan, 'role': 'background', 'language': 'en', 'evidence': [EVIDENCE]}})
+    assert llm_task.run_llm_task(request).status == 'succeeded'
+    request.input.data['evidence'] = [other]
+    assert llm_task.run_llm_task(request).error_code == 'invalid_model_output'
+    section['claim_ids'] = section['blocks'][0]['claim_ids'] = ['other']
+    request.input.data['evidence'] = [EVIDENCE, other]
+    assert llm_task.run_llm_task(request).error_code == 'invalid_model_output'
+    section['claim_ids'] = section['blocks'][0]['claim_ids'] = ['required', 'other']
+    assert llm_task.run_llm_task(request).status == 'succeeded'
+
+
+@pytest.mark.parametrize('collision', ['none', 'block', 'claim'])
+def test_full_review_validates_unique_targets_even_without_findings(monkeypatch, collision):
+    monkeypatch.setattr(llm_task, 'AutoModel', lambda **kwargs: lambda *a, **k: '{"findings":[]}')
+    sections = []
+    for index, role in enumerate(ROLES):
+        block = {**SECTION['blocks'][0], 'id': f'b{0 if collision == "block" else index}'}
+        claim_id = f'c{0 if collision == "claim" else index}'
+        claim = {'id': claim_id, 'statement': 'Each sample was weighed.', 'attribution': 'paper_statement',
+                 'evidence_ids': [SOURCE_ID], 'argument_type': None, 'conditions': [], 'support_status': 'supported'}
+        sections.append({**SECTION, 'role': role, 'title': role.title(), 'blocks': [block], 'claims': [claim]})
+    request = llm_task.LLMTaskRequest(
+        task_type='paper.guide.review', options={'task_version': 'paper-guide-v1'},
+        input={'data': {'plan': PLAN, 'sections': sections, 'language': 'en', 'evidence': [EVIDENCE]}})
+    result = llm_task.run_llm_task(request)
+    assert result.error_code == (None if collision == 'none' else 'invalid_task_input')
+
+
+@pytest.mark.parametrize(('body', 'error'), [
+    ('The interval $a<x>b$ is excluded. The mean is $<X>$.', None),
+    ('$a<script>alert(1)</script>b$', 'invalid_model_output'),
+    ('$<img src=x>$', 'invalid_model_output'),
+    ('$![image](https://example.org/image.png)$', 'invalid_model_output'),
+])
+def test_guide_math_preserves_compact_comparisons_without_html(monkeypatch, body, error):
+    raw = {'claims': [], 'open_questions': [body]}
+    monkeypatch.setattr(llm_task, 'AutoModel', lambda **kwargs: lambda *a, **k: json.dumps(raw))
+    request = llm_task.LLMTaskRequest(
+        task_type='paper.guide.extract', options={'task_version': 'paper-guide-v1'},
+        input={'data': {'language': 'en', 'evidence': [EVIDENCE]}})
+    assert llm_task.run_llm_task(request).error_code == error
+
+
+def test_formula_retains_previous_json_decoding_behavior(monkeypatch):
+    raw = '{"summary":"Initial","summary":"Final","symbols":[]}'
+    monkeypatch.setattr(llm_task, 'AutoModel', lambda **kwargs: lambda *a, **k: raw)
+    request = llm_task.LLMTaskRequest(
+        task_type='paper.formula.explain', options={'task_version': 'formula-explanation-v7-low-latency'},
+        input={'data': {'language': 'en', 'target_formula': {'id': 'f', 'latex': 'x + y'}, 'source_blocks': []}})
+    result = llm_task.run_llm_task(request)
+    assert result.status == 'succeeded'
+    assert result.output['summary'] == 'Final'

@@ -57,11 +57,11 @@ func TestSourceSnapshotIdentityAndGeometry(t *testing.T) {
 
 func TestTextMatchingUsesRuneOffsetsAndPreservesMeaning(t *testing.T) {
 	text := "Every sample was re-\nweighed at −2 °C. Repeat. Repeat."
-	start, end, err := MatchTextSpan(text, "Every sample was reweighed at −2 °C.")
+	start, end, err := MatchTextSpan(text, "Every sample was re- weighed at −2 °C.")
 	if err != nil || string([]rune(text)[start:end]) != "Every sample was re-\nweighed at −2 °C." {
 		t.Fatalf("offsets %d:%d (%v)", start, end, err)
 	}
-	for _, quote := range []string{"Repeat.", "Every sample was reweighed at 2 °C.", "Some sample was reweighed at −2 °C."} {
+	for _, quote := range []string{"Repeat.", "Every sample was reweighed at 2 °C.", "Some sample was re- weighed at −2 °C."} {
 		if _, _, err := MatchTextSpan(text, quote); err == nil {
 			t.Fatalf("accepted %q", quote)
 		}
@@ -88,7 +88,7 @@ func TestResolversUseCanonicalSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	span, err := ResolveTextLocator(s, s.Evidence[1].ID, "reweighed at −2 °C.")
+	span, err := ResolveTextLocator(s, s.Evidence[1].ID, "re- weighed at −2 °C.")
 	if err != nil || span.Kind != "text_span" || span.Start != 17 || span.End != len([]rune(d.Blocks[1].Text)) {
 		t.Fatalf("incorrect span: %+v, %v", span, err)
 	}
@@ -105,5 +105,18 @@ func TestResolversUseCanonicalSource(t *testing.T) {
 	}
 	if _, err := ResolveTableLocator(s, s.Evidence[5].ID, []GuideCell{{Row: 0, Column: 1}}); err == nil {
 		t.Fatal("accepted nonexistent cell origin")
+	}
+}
+
+func TestPreserveAmbiguousHyphensAndExplicitSoftHyphen(t *testing.T) {
+	for _, pair := range [][2]string{{"Compare mu-\nsigma.", "Compare musigma."}, {"re-\nweighed", "reweighed"}} {
+		if _, _, err := MatchTextSpan(pair[0], pair[1]); err == nil {
+			t.Fatalf("fabricated match %q", pair[1])
+		}
+	}
+	s := "−2 °C: re\u00ad\nweighed."
+	start, end, err := MatchTextSpan(s, "reweighed")
+	if err != nil || string([]rune(s)[start:end]) != "re\u00ad\nweighed" {
+		t.Fatalf("soft hyphen source span %d:%d: %v", start, end, err)
 	}
 }

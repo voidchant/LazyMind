@@ -48,9 +48,21 @@ func ValidateEvidence(s GuideSourceSnapshot, e GuideEvidence) error {
 var itemID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,80}$`)
 var unsafeMarkup = regexp.MustCompile("(?i)</?[a-z][a-z0-9:-]*(?:[\\s/][^<>]*)?>|<\\s*[!?]|(?:javascript|vbscript|data|file):|!?\\[[^\\]\\n]*\\]\\s*(?:\\(|\\[)|(?m:^\\s*\\[[^\\]\\n]+\\]:)|!\\[\\[|(?:https?://|www\\.)|" + "\x60{3}|(?m:^\\s*~{3})")
 
+var inlineMath = regexp.MustCompile(`\$[^$\n]+\$`)
+var mathAngleVariable = regexp.MustCompile(`(?i)<[c-hj-ortv-z]>`)
+
+// Recognize compact angle notation for single-letter variables that are not
+// HTML tag names. Keep all other markup checks active inside math.
+func unsafeProse(s string) bool {
+	checked := inlineMath.ReplaceAllStringFunc(s, func(math string) string {
+		return mathAngleVariable.ReplaceAllString(math, "x")
+	})
+	return unsafeMarkup.MatchString(checked)
+}
+
 func prose(s string, limit int) bool {
 	return strings.TrimSpace(s) != "" && utf8.ValidString(s) && utf8.RuneCountInString(s) <= limit &&
-		!strings.ContainsAny(s, "\x00\u202a\u202b\u202d\u202e\u2066\u2067\u2068\u2069") && !unsafeMarkup.MatchString(s)
+		!strings.ContainsAny(s, "\x00\u202a\u202b\u202d\u202e\u2066\u2067\u2068\u2069") && !unsafeProse(s)
 }
 func texts(xs []string, count, limit int) bool {
 	if len(xs) > count {
@@ -291,6 +303,16 @@ func ValidateSection(s GuideSourceSnapshot, p GuidePlan, role Role, out GuideSec
 	if len(used) != len(sectionClaims) {
 		return invalid("orphan section claims")
 	}
+	for _, id := range expected.ClaimIDs {
+		if !used[id] {
+			return invalid("missing planned claim")
+		}
+	}
+	for _, c := range p.Claims {
+		if used[c.ID] && !refs(c.EvidenceIDs, ev, 32) {
+			return invalid("planned claim evidence outside packet")
+		}
+	}
 	for _, c := range out.Claims {
 		if !used[c.ID] {
 			return invalid("orphan new claim")
@@ -302,14 +324,20 @@ func ValidateSection(s GuideSourceSnapshot, p GuidePlan, role Role, out GuideSec
 func ValidateReview(p GuidePlan, sections []GuideSection, out GuideReview) error {
 	claims, blocks := map[string]bool{}, map[string]bool{}
 	for _, c := range p.Claims {
-		claims[c.ID] = true
+		if !addID(claims, c.ID) {
+			return invalid("ambiguous review claim ID")
+		}
 	}
 	for _, s := range sections {
 		for _, c := range s.Claims {
-			claims[c.ID] = true
+			if !addID(claims, c.ID) {
+				return invalid("ambiguous review claim ID")
+			}
 		}
 		for _, b := range s.Blocks {
-			blocks[b.ID] = true
+			if !addID(blocks, b.ID) {
+				return invalid("ambiguous review block ID")
+			}
 		}
 	}
 	if len(out.Findings) > 48 {

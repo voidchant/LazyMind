@@ -25,8 +25,13 @@ UNSAFE = re.compile(r'</?[a-z][a-z0-9:-]*(?:[\s/][^<>]*)?>|<\s*[!?]|(?:javascrip
                     r'|[\x00\u202a\u202b\u202d\u202e\u2066-\u2069]', re.I)
 
 
+INLINE_MATH = re.compile(r'\$[^$\n]+\$')
+MATH_ANGLE_VARIABLE = re.compile(r'<[c-hj-ortv-z]>', re.I)
+
+
 def safe_prose(value):
-    if not value.strip() or UNSAFE.search(value):
+    checked = INLINE_MATH.sub(lambda match: MATH_ANGLE_VARIABLE.sub('x', match[0]), value)
+    if not value.strip() or UNSAFE.search(checked):
         raise ValueError('expected safe prose')
     return value
 
@@ -259,6 +264,11 @@ class ReviewInput(GuideInput):
     def check_review_scope(self):
         if len(self.sections) != 1 and tuple(s.role for s in self.sections) != ROLES:
             raise ValueError('review requires one section or the complete ordered guide')
+        planned = {claim.id for claim in self.plan.claims}
+        generated = unique(claim.id for section in self.sections for claim in section.claims)
+        if planned & generated:
+            raise ValueError('review claim ID collides with plan')
+        unique(block.id for section in self.sections for block in section.blocks)
         return self
 
 
@@ -315,6 +325,11 @@ def bind_output(data, result):
         used = bind_sections(result.blocks, 'claim_ids', section_claims)
         if used != section_claims or not claim_ids <= used:
             raise ValueError('unbound section claims')
+        if not set(expected.claim_ids) <= used:
+            raise ValueError('missing planned claim')
+        for claim in data.plan.claims:
+            if claim.id in used:
+                refs(claim.evidence_ids, evidence)
         bind_sections(result.blocks, 'evidence_ids', evidence)
         for block in result.blocks:
             if block.attribution == 'paper_statement' and not (block.claim_ids or block.evidence_ids):

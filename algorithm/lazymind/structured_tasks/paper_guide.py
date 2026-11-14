@@ -57,7 +57,9 @@ teaching examples suited to the argument (worked example, counterexample, compar
 analysis); mark them as teaching and label external background or interpretation clearly. Do not
 hide essential explanation in a detail block. Support every paper-statement block with its claim
 IDs or direct evidence. Add and cite a new claim for newly introduced important paper facts. List
-all used claim IDs at section level and use each in a block. For visual assets use only planned
+all used claim IDs at section level and use each in a block. Cover every claim assigned to this
+role, and only use claims whose evidence is in this packet. For compact angle notation prefer
+LaTeX \\langle and \\rangle within math. For visual assets use only planned
 IDs from the packet with a matching block kind. Give section-specific block and new-claim IDs
 (e.g. contribution-b1), and provide a short continuity summary. If findings are present, repair
 their concrete scope and preserve the rest of the section's commitments.

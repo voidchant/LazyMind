@@ -36,7 +36,7 @@ func TestPlanSectionAndReviewValidateScientificProseAndScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := ArgumentExperiment
-	claim := GuideClaim{ID: "c1", Statement: "Every sample with x < y changed by −2 g.", Attribution: AttributionPaper,
+	claim := GuideClaim{ID: "c1", Statement: "Every sample with $a<x>b$ changed by −2 g.", Attribution: AttributionPaper,
 		ArgumentType: &a, EvidenceIDs: []string{s.Evidence[0].ID}, SupportStatus: SupportSupported}
 	p := GuidePlan{Profiles: GuideProfiles{Primary: &a, Secondary: []ArgumentType{ArgumentObservational}},
 		Questions: []string{"What did the authors weigh?"}, Claims: []GuideClaim{claim}}
@@ -51,7 +51,7 @@ func TestPlanSectionAndReviewValidateScientificProseAndScope(t *testing.T) {
 	if err := ValidateSection(s, p, RoleBackground, section); err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{`<script>run()</script>`, `![](https://remote.example)`, `![[external-attachment]]`} {
+	for _, text := range []string{`<script>run()</script>`, `$a<script>alert(1)</script>b$`, `$<img src=x>$`, `![](https://remote.example)`, `![[external-attachment]]`} {
 		section.Blocks[0].Text = text
 		if err := ValidateSection(s, p, RoleBackground, section); err == nil {
 			t.Fatalf("accepted %q", text)
@@ -68,5 +68,69 @@ func TestPlanSectionAndReviewValidateScientificProseAndScope(t *testing.T) {
 	p.Claims[0].EvidenceIDs[0] = "ev_foreign"
 	if err := ValidatePlan(s, p); err == nil {
 		t.Fatal("accepted a foreign claim source")
+	}
+}
+
+func TestSectionRequiresPlannedClaimsAndEvidenceClosure(t *testing.T) {
+	d, id := fixture(t)
+	s, err := BuildSourceSnapshot(d, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement := "Each sample was weighed."
+	plan := GuidePlan{Sections: []GuideSectionPlan{{Role: RoleBackground, Title: "Background", ClaimIDs: []string{"required"}}},
+		Claims: []GuideClaim{
+			{ID: "required", EvidenceIDs: []string{s.Evidence[0].ID}},
+			{ID: "another", EvidenceIDs: []string{s.Evidence[1].ID}},
+		}}
+	out := GuideSection{Role: RoleBackground, Title: "Background", Summary: statement, ClaimIDs: []string{"required"},
+		Blocks: []GuideBlock{{ID: "b1", Kind: "paragraph", Text: statement, Attribution: AttributionPaper, ClaimIDs: []string{"required"}}}}
+	packet, err := RestrictEvidence(s, []string{s.Evidence[0].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSection(packet, plan, RoleBackground, out); err != nil {
+		t.Fatal(err)
+	}
+	other, err := RestrictEvidence(s, []string{s.Evidence[1].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSection(other, plan, RoleBackground, out); err == nil {
+		t.Error("accepted frozen claim outside packet")
+	}
+	out.ClaimIDs, out.Blocks[0].ClaimIDs = []string{"another"}, []string{"another"}
+	if err := ValidateSection(s, plan, RoleBackground, out); err == nil {
+		t.Error("omitted required claim")
+	}
+	out.ClaimIDs, out.Blocks[0].ClaimIDs = []string{"required", "another"}, []string{"required", "another"}
+	if err := ValidateSection(s, plan, RoleBackground, out); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReviewRequiresUnambiguousTargetsEvenWithoutFindings(t *testing.T) {
+	plan := GuidePlan{Claims: []GuideClaim{{ID: "frozen"}}}
+	sections := []GuideSection{
+		{Role: RoleBackground, Blocks: []GuideBlock{{ID: "b1", ClaimIDs: []string{"frozen"}}}, Claims: []GuideClaim{{ID: "n1"}}},
+		{Role: RoleQuestion, Blocks: []GuideBlock{{ID: "b2", ClaimIDs: []string{"frozen"}}}, Claims: []GuideClaim{{ID: "n2"}}},
+		{Role: RoleContribution}, {Role: RoleJustification},
+	}
+	finding := GuideFinding{TargetType: "block", TargetID: "b1", IssueType: "coverage", Suggestion: "Explain what went unreported."}
+	for _, subset := range [][]GuideSection{sections, sections[:1]} {
+		if err := ValidateReview(plan, subset, GuideReview{Findings: []GuideFinding{finding}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sections[1].Blocks[0].ID = "b1"
+	if err := ValidateReview(plan, sections, GuideReview{}); err == nil {
+		t.Error("ambiguous block")
+	}
+	sections[1].Blocks[0].ID = "b2"
+	for _, id := range []string{"n1", "frozen"} {
+		sections[1].Claims[0].ID = id
+		if err := ValidateReview(plan, sections, GuideReview{}); err == nil {
+			t.Errorf("ambiguous claim %s", id)
+		}
 	}
 }

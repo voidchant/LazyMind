@@ -256,15 +256,16 @@ func normalizeText(s string) (string, [][2]int) {
 	var b strings.Builder
 	spans := make([][2]int, 0, len(r))
 	for i := 0; i < len(r); {
-		if r[i] == '-' && i >= 2 && i+1 < len(r) && unicode.IsLetter(r[i-1]) && unicode.IsLetter(r[i-2]) && (r[i+1] == '\n' || r[i+1] == '\r') {
-			j := i + 1
-			for j < len(r) && unicode.IsSpace(r[j]) {
-				j++
+		// A soft hyphen explicitly marks a discretionary break. An ASCII
+		// hyphen can instead be a scientific operator or part of a name.
+		if r[i] == '\u00ad' {
+			i++
+			if i < len(r) && (r[i] == '\r' || r[i] == '\n') {
+				for i < len(r) && unicode.IsSpace(r[i]) {
+					i++
+				}
 			}
-			if j+1 < len(r) && unicode.IsLower(r[j]) && unicode.IsLetter(r[j+1]) {
-				i = j
-				continue
-			}
+			continue
 		}
 		if unicode.IsSpace(r[i]) {
 			start := i
